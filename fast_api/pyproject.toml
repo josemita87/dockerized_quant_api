@@ -11,6 +11,7 @@ fastapi = "^0.115.0"
 uvicorn = "^0.30.6"
 yfinance = "^0.2.43"
 black = "^24.8.0"
+quixstreams = "^2.11.0"
 
 
 [build-system]

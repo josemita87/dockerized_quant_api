@@ -1,44 +1,67 @@
-from fastapi import FastAPI
-import yfinance
-import uvicorn
+from threading import Thread
+from quixstreams import Application
+import pandas as pd
+import host_api  # Import your FastAPI server logic from `hostapi.py`
+import requests
+import time
 
-app = FastAPI()
+def ingestion_1(tickers=["AAPL", "MSFT", "GOOGL", "AMZN"]):
+    
+    # Initialize the FastAPI server in a separate thread
+    server_thread = Thread(target=host_api.run_server, daemon=True) 
+    server_thread.start()
 
+    # Wait for the server to start before making requests
+    time.sleep(5)
 
-# This is the root path of the API, what will be displayed when you access the API
-@app.get("/")
-async def root():
-    return {"message": "Welcome to QuantFI API!"}
+    # URL for the API server
+    api_base_url = "http://127.0.0.1:8001/"
 
+    stock_data = []
 
-# This is the path that will return the data of a specific stock
-@app.get("/{ticker}")
-async def get_data(ticker: str = "AAPL"):
-    data = yfinance.download(ticker)
-    return data.to_dict()
+    for ticker in tickers:
+        # Make a GET request to the API to retrieve stock data
+        response = requests.get(f"{api_base_url}{ticker}")
+        data = response.json()
+        trimmed_data = pd.DataFrame(data).head(10).to_dict()
+      
+        stock_data.append({
+            'ticker': ticker,
+            'data': trimmed_data
+        })
 
-
-# This is the path that will return the indicators data of a specific stock
-@app.get("/indicators/{ticker}")
-async def add_technical_indicators(ticker: str):
-    data = yfinance.download(ticker)
-    indicators = {
-        "MA": data["Close"].rolling(window=50).mean().fillna(0).tolist(),
-        "RSI": compute_rsi(data["Close"]).fillna(0).tolist(),
-    }
-    return indicators
-
-
-# Auxiliary function to calculate the RSI
-def compute_rsi(series, periods=14):
-    delta = series.diff(1)
-    gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+        # Simulate a delay between requests
+        #time.sleep(1)
+        
+    return stock_data
 
 
-# Run the server
+
+def redpandas_producer(stock_data: list[dict], broker: str = "localhost:9092"):
+    
+    app = Application(broker_address = broker)
+    msg_topic = app.topic(name="OHLC", value_serializer="json")
+
+    with app.get_producer() as producer:
+
+        for stock in stock_data:
+
+            kafka_msg = msg_topic.serialize(
+                key = stock['ticker'], 
+                value = stock['data']
+            )
+            producer.produce(
+                topic=msg_topic.name, 
+                value=kafka_msg.value,
+                key=kafka_msg.key
+            )
+            print(f"Produced message for {stock['ticker']}")
+            time.sleep(1)
+    
+    
+
+
 if __name__ == "__main__":
-    print("Server running at: http://127.0.0.1:8001")
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+
+    stock_data = ingestion_1()
+    redpandas_producer(stock_data, broker="redpanda-0:9092")
