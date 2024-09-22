@@ -17,8 +17,8 @@ poetry new {project_name}                 # Initialize your project (creates pyp
 
 ### 2. Add Dependencies
 ```sh
-cd fast_api/src                           # Navigate to the directory where pyproject.toml is located
-poetry add fastapi uvicorn yfinance black # Add dependencies to the poetry environment
+cd {project_name}                         # Navigate to the directory where pyproject.toml is located
+poetry add fastapi uvicorn yfinance black quixstreams pandas # Add dependencies to the poetry environment
 ```
 
 ### 3. Configure Python Interpreter
@@ -26,18 +26,33 @@ poetry add fastapi uvicorn yfinance black # Add dependencies to the poetry envir
 poetry env info --path                    # Get the environment path and add it to the Python interpreter (Bottom right in VSCode)
 ```
 
-### 4. Develop API Logic
+### 4. Connect to Redpanda
+```sh
+cd root_directory/docker-compose          # Assumes docker-compose is installed
+docker-compose -f redpanda.yml up -d      # Create a directory within the root directory and copy the yaml file from Redpanda's website
+```
+Alternatively: Go to Redpanda's website and copy the blueprint they provide (yml file). You should place it in a folder (called docker-compose in this case) within the root directory.
+
+### 5. Develop API Logic
 Develop the logic for your FastAPI application.
 
-### 5. Build Docker Container
+### 6. Develop Main Logic
+This includes fetching data from your host API, producing Kafka topics from it, and sending them to the Redpanda cluster.
+
+### 7. Build Docker Container
+If you want to run your app directly through Docker, make sure to add `name: redpanda_network` in line 4 (below `redpanda_network:`) and then change the Kafka address to `redpanda-0:9092` in main.py.
+
+Before building the Docker container, remember to apply any changes to your code. One of the issues I faced was an incorrect Kafka address when running through Docker (because even though I would change it, I did not delete and rebuild the image with the updated scripts).
+
+Remember to edit your Dockerfile as you wish. The most important components are installing poetry, copying the cwd, installing dependencies through poetry, and finally defining the CMD (order of execution once the container is spun up).
 ```sh
-cd fast_api
-docker build --progress=plain -t quant_api .  # Build the Docker container
+cd {project_name}
+docker build --progress=plain -t quant_api .  # Build the Docker container. I named it quant_api
 ```
 
-### 6. Run Docker Container
+### 8. Spin Up Docker Container
 ```sh
-docker run --rm -p 8001:8001 --name quant_api quant_api  # Run the container, remove it once finished, map local port to container port, and give it a name
+docker run -it --network redpanda_network --rm -p 8001:8001 --name quant_api quant_api  # Run the container, remove it once finished, map local port to container port, and give it a name
 ```
 
 ## Docker Command-Line Flags and Their Purposes
@@ -55,7 +70,7 @@ docker run --rm -p 8001:8001 --name quant_api quant_api  # Run the container, re
 ### -p or --publish
 - **Usage:** Maps a container's port to a port on the host.
 - **Example:** `docker run -p 8080:80 my-image`
-- **Purpose:** Exposes a specific port from the container, allowing external access to services running inside the container.
+- **Purpose:** Exposes a specific port from the container, allowing external access to services running inside the container. Any traffic sent to `localhost:8001` on your local machine will be forwarded to port `8001` inside the container.
 
 ### -d or --detach
 - **Usage:** Runs a container in detached mode (in the background).
