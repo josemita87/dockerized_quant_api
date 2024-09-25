@@ -18,7 +18,7 @@ poetry new {project_name}                 # Initialize your project (creates pyp
 ### 2. Add Dependencies
 ```sh
 cd {project_name}                         # Navigate to the directory where pyproject.toml is located
-poetry add fastapi uvicorn yfinance black quixstreams pandas # Add dependencies to the poetry environment
+poetry add fastapi uvicorn yfinance black quixstreams pandas dotenv pydantic-settings  # Add dependencies to the poetry environment
 ```
 
 ### 3. Configure Python Interpreter
@@ -28,32 +28,128 @@ poetry env info --path                    # Get the environment path and add it 
 
 ### 4. Connect to Redpanda
 ```sh
-cd root_directory/docker-compose          # Assumes docker-compose is installed
-docker-compose -f redpanda.yml up -d      # Create a directory within the root directory and copy the yaml file from Redpanda's website
+cd Docker_fast_api                         # Go to root directory
+mkdir docker-compose                       # Assumes docker-compose is installed on the local machine
+touch docker-compose.yml                   # Go to Redpanda's website and copy-paste the docker-compose file 
+docker-compose -f docker-compose.yml up -d # Create a directory within the root directory and copy the YAML file from Redpanda's website
 ```
-Alternatively: Go to Redpanda's website and copy the blueprint they provide (yml file). You should place it in a folder (called docker-compose in this case) within the root directory.
 
 ### 5. Develop API Logic
-Develop the logic for your FastAPI application.
+Develop the logic for the ingestion and retrieval of data through FastAPI application.
 
 ### 6. Develop Main Logic
 This includes fetching data from your host API, producing Kafka topics from it, and sending them to the Redpanda cluster.
 
-### 7. Build Docker Container
-If you want to run your app directly through Docker, make sure to add `name: redpanda_network` in line 4 (below `redpanda_network:`) and then change the Kafka address to `redpanda-0:9092` in main.py.
+### 7. Create `config.py` and `.env` Files
+To automate addresses and avoid parameter hard-coding:
 
-Before building the Docker container, remember to apply any changes to your code. One of the issues I faced was an incorrect Kafka address when running through Docker (because even though I would change it, I did not delete and rebuild the image with the updated scripts).
-
-Remember to edit your Dockerfile as you wish. The most important components are installing poetry, copying the cwd, installing dependencies through poetry, and finally defining the CMD (order of execution once the container is spun up).
 ```sh
-cd {project_name}
-docker build --progress=plain -t quant_api .  # Build the Docker container. I named it quant_api
+cd fast_api
+touch .env
 ```
 
-### 8. Spin Up Docker Container
 ```sh
-docker run -it --network redpanda_network --rm -p 8001:8001 --name quant_api quant_api  # Run the container, remove it once finished, map local port to container port, and give it a name
+cd fast_api/src
+touch config.py
 ```
+
+In `config.py`:
+```python
+import os
+from dotenv import load_dotenv, find_dotenv  # dotenv enables us to load the strings from .env to our actual environment
+from pydantic-settings import BaseSettings   # pydantic enables us to type-check config parameters before actually running the scripts
+
+load_dotenv(find_dotenv()) 
+
+class Settings(BaseSettings):
+
+    kafka_broker_address: str = kafka_broker_address
+    
+```
+
+In `.env`:
+```env
+# We define the predetermined environment variable to the port of our machine
+# Beware the election of the port is made after the docker-compose file (internal and external port indications)
+KAFKA_BROKER_ADDRESS=localhost:9092 
+```
+
+To handle the environment variable for Docker execution:
+```sh
+cd ../docker-compose
+```
+
+
+Finally, import `config.py` and pass this variable in `main.py` to the producer function:
+```sh
+cd ../fast_api/src
+```
+
+In `main.py`:
+```python
+from config import kafka_broker_address
+```
+
+### 8. Makefile creation
+
+In `Makefile`, for the run command, add:
+
+```Makefile
+build:
+	docker build -t quant_api .
+
+run: 
+	docker run \
+	-it --network redpanda_network \
+	--env KAFKA_BROKER_ADDRESS=redpanda:9092\ 
+	--rm -p 8001:8001 \
+	--name quant_api quant_api
+```
+Take note, we change the port (environment variable) to the internal one	
+When run from Docker, it will automatically set the environment variable to the internal port.
+
+### 8. Build Docker Container 
+```sh
+cd fast_api 
+make build
+```
+
+### 9. Spin Up Docker Container
+```sh
+make run
+```
+
+### 10. Dockerfile optimization
+
+
+
+
+#### 1. **Use `.dockerignore`**: Exclude unnecessary files from the build context.
+    ```
+    .git
+    node_modules
+    *.log
+    ```
+
+
+#### 2. Leverage caching
+
+    Try to place on top those installations/directories which will be less frequently
+    updated (i.e poetry add(s)). This is optimal since docker will just reinstall 
+    the dependencies when they are added (not every time we spin up container.)
+
+
+    (...)
+
+### 11. Dev Tools
+
+    1. Instead of print-debug statements, add loguru and substitute print with logger.info()
+    ```sh
+    cd fast_api/src
+    poetry add loguru
+    ```
+
+
 
 ## Docker Command-Line Flags and Their Purposes
 

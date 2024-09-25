@@ -4,6 +4,8 @@ import pandas as pd
 import host_api  # Import your FastAPI server logic from `hostapi.py`
 import requests
 import time
+import config
+from loguru import logger
 
 def ingestion_1(tickers=["AAPL", "MSFT", "GOOGL", "AMZN"]):
     
@@ -37,7 +39,7 @@ def ingestion_1(tickers=["AAPL", "MSFT", "GOOGL", "AMZN"]):
 
 
 
-def redpandas_producer(stock_data: list[dict], broker: str = "localhost:9092"):
+def redpandas_producer(stock_data: list[dict], broker):
     
     app = Application(broker_address = broker)
     msg_topic = app.topic(name="OHLC", value_serializer="json")
@@ -55,7 +57,7 @@ def redpandas_producer(stock_data: list[dict], broker: str = "localhost:9092"):
                 value=kafka_msg.value,
                 key=kafka_msg.key
             )
-            print(f"Produced message for {stock['ticker']}")
+            logger.info(f"Produced message for {stock['ticker']}")
             time.sleep(1)
     
     
@@ -64,4 +66,4 @@ def redpandas_producer(stock_data: list[dict], broker: str = "localhost:9092"):
 if __name__ == "__main__":
 
     stock_data = ingestion_1()
-    redpandas_producer(stock_data, broker="redpanda-0:9092")
+    redpandas_producer(stock_data, broker=config.kafka_broker_address)
